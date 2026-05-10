@@ -1,4 +1,4 @@
-name: تلگرام دانلودر (نسخه بهینه شده)
+name: تلگرام دانلودر (نسخه هوشمند)
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 📂 Clone repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -53,11 +53,9 @@ jobs:
               
               for attempt in range(max_retries):
                   try:
-                      # افزایش زمان تایم‌اوت به ۱۰ دقیقه برای پایداری بیشتر
                       range_header = {"Range": f"bytes={downloaded}-"} if downloaded > 0 else {}
                       resp = session.get(url, stream=True, timeout=600, headers=range_header)
                       
-                      # اگر سرور از رنج پشتیبانی نکنه، دوباره از صفر شروع میکنیم
                       if downloaded > 0 and resp.status_code != 206:
                           print("\n⚠️ Server doesn't support resume. Restarting from 0...")
                           downloaded = 0
@@ -81,26 +79,36 @@ jobs:
                       temp_path.rename(output_path)
                       return True
                   except Exception as e:
-                      wait_time = min(2 ** (attempt % 6), 30) # انتظار بین ۲ تا ۳۰ ثانیه
+                      wait_time = min(2 ** (attempt % 6), 30)
                       print(f"\n⚠️ Connection issue ({e}). Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
                       time.sleep(wait_time)
               return False
 
           def get_link(telegram_link):
+              # هوشمندسازی: حذف کوئری‌های اضافی انتهای لینک مثل ?single
+              clean_link = telegram_link.split('?')[0]
+              print(f"🔗 Requesting link from API for: {clean_link}")
+              
               api_url = "https://telegramdownloader.net/proxy.php"
               headers = {"User-Agent": "Mozilla/5.0"}
               try:
-                  resp = requests.post(api_url, headers=headers, data={"telegram_link": telegram_link}, timeout=60)
+                  resp = requests.post(api_url, headers=headers, data={"telegram_link": clean_link}, timeout=60)
                   result = resp.json()
                   data = result.get('data', {}).get('data', {})
+                  
+                  if not data.get('link'):
+                      print(f"❌ API Error or No Link found in response: {result}")
+                      
                   return data.get('link'), data.get('file_name')
-              except:
+              except Exception as e:
+                  print(f"❌ Failed to contact API: {e}")
                   return None, None
 
           if __name__ == "__main__":
               link = sys.argv[1]
               out_dir = sys.argv[2]
               raw_url, file_name = get_link(link)
+              
               if raw_url and file_name:
                   out_path = Path(out_dir) / file_name
                   print(f"📁 Downloading: {file_name}")
@@ -109,6 +117,8 @@ jobs:
                       with open(Path(out_dir) / ".download_info", "w") as info:
                           info.write(f"{file_name}\n{out_path.stat().st_size}")
                       sys.exit(0)
+              
+              print("❌ Could not proceed with the download.")
               sys.exit(1)
           EOF
 
@@ -135,7 +145,6 @@ jobs:
             zip -s "${THRESHOLD}m" "${FILENAME}.zip" "$FILENAME"
             rm "$FILENAME"
           fi
-          # پاکسازی نام فایل
           for f in *; do mv "$f" "$(echo "$f" | sed 's/[^a-zA-Z0-9._-]/_/g')"; done
 
       - name: 📤 Push to GitHub
